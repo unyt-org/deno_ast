@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::rc::Rc;
 use std::sync::Arc;
+mod jusix;
 
 use deno_media_type::MediaType;
 use swc_ecma_visit::as_folder;
@@ -476,6 +477,10 @@ pub fn fold_program(
     Optional::new(
       transforms::ImportDeclsToVarDeclsFolder,
       options.var_decl_imports && options.transform_jsx
+    ),
+    Optional::new(
+      jusix::TransformVisitor,
+      true
     ),
     fixer(Some(comments)),
     hygiene(),
