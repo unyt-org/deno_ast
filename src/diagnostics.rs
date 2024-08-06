@@ -16,6 +16,7 @@ use crate::SourceRange;
 use crate::SourceRanged;
 use crate::SourceTextInfo;
 
+#[derive(Clone, Debug)]
 pub enum DiagnosticLevel {
   Error,
   Warning,
