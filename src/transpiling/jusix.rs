@@ -47,7 +47,7 @@ impl TransformVisitor {
             _ => Box::new(
                 Expr::Call(CallExpr {
                     span: DUMMY_SP,
-                    callee: Callee::Expr(Box::new(Expr::Ident(Ident::new("always".into(), DUMMY_SP)))),
+                    callee: Callee::Expr(Box::new(Expr::Ident(Ident::new("always".into(), DUMMY_SP, Default::default())))),
                     args: vec![Expr::Arrow(ArrowExpr {
                         span: DUMMY_SP,
                         params: Take::dummy(),
@@ -56,8 +56,10 @@ impl TransformVisitor {
                         is_generator: false,
                         type_params: Take::dummy(),
                         return_type: Take::dummy(),
+                        ctxt: Default::default(),
                     }).into()],
                     type_args: Take::dummy(),
+                    ctxt: Default::default(),
                 })
 
         )
@@ -84,15 +86,16 @@ impl Fold for TransformVisitor {
                             Expr::JSXElement(_) | 
                             Expr::Ident(_) => CallExpr {
                                 span: DUMMY_SP,
-                                callee: Callee::Expr(Box::new(Expr::Ident(Ident::new("$$".into(), DUMMY_SP)))),
+                                callee: Callee::Expr(Box::new(Expr::Ident(Ident::new("$$".into(), DUMMY_SP, n.ctxt)))),
                                 args: vec![arg.into()],
                                 type_args: Take::dummy(),
+                                ctxt: n.ctxt,
                             },
 
                             // default: wrap in always
                             _ => CallExpr {
                                 span: DUMMY_SP,
-                                callee: Callee::Expr(Box::new(Expr::Ident(Ident::new("always".into(), DUMMY_SP)))),
+                                callee: Callee::Expr(Box::new(Expr::Ident(Ident::new("always".into(), DUMMY_SP, n.ctxt)))),
                                 args: vec![Expr::Arrow(ArrowExpr {
                                     span: DUMMY_SP,
                                     params: Take::dummy(),
@@ -101,8 +104,10 @@ impl Fold for TransformVisitor {
                                     is_generator: false,
                                     type_params: Take::dummy(),
                                     return_type: Take::dummy(),
+                                    ctxt: n.ctxt,
                                 }).into()],
                                 type_args: Take::dummy(),
+                                ctxt: n.ctxt,
                             }
                         }
                     }
