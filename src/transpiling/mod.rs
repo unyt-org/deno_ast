@@ -478,10 +478,7 @@ pub fn fold_program(
       transforms::ImportDeclsToVarDeclsFolder,
       options.var_decl_imports && options.transform_jsx
     ),
-    Optional::new(
-      jusix::TransformVisitor,
-      true
-    ),
+    Optional::new(jusix::TransformVisitor, true),
     fixer(Some(comments)),
     hygiene(),
   );
