@@ -5,9 +5,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use deno_media_type::MediaType;
-use dprint_swc_ext::common::SourceRangedForSpanned;
-use dprint_swc_ext::common::SourceTextInfo;
-use swc_ecma_visit::fold_pass;
+use jusix::TransformVisitor;
+use swc_ecma_visit::as_folder;
 use thiserror::Error;
 
 use crate::emit;
@@ -41,6 +40,7 @@ use crate::SourceMap;
 use deno_error::JsError;
 use std::cell::RefCell;
 
+mod jusix;
 mod jsx_precompile;
 mod transforms;
 
@@ -659,11 +659,13 @@ pub fn fold_program<'a>(
   diagnostics: Box<dyn Iterator<Item = &'a ParseDiagnostic> + 'a>,
 ) -> Result<Program, FoldProgramError> {
   ensure_no_fatal_diagnostics(diagnostics)?;
-  let passes = (
+
+  let mut passes = chain!(
     Optional::new(
-      fold_pass(transforms::StripExportsFolder),
-      options.var_decl_imports,
+      TransformVisitor,
+      true
     ),
+    Optional::new(transforms::StripExportsFolder, options.var_decl_imports),
     resolver(marks.unresolved, marks.top_level, true),
     Optional::new(
       proposal::decorators::decorators(proposal::decorators::Config {
