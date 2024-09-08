@@ -5,8 +5,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use deno_media_type::MediaType;
-use dprint_swc_ext::common::SourceRangedForSpanned;
-use dprint_swc_ext::common::SourceTextInfo;
+use jusix::TransformVisitor;
+use swc_ecma_visit::as_folder;
 use thiserror::Error;
 
 use crate::emit;
@@ -40,6 +40,7 @@ use crate::SourceMap;
 
 use std::cell::RefCell;
 
+mod jusix;
 mod jsx_precompile;
 mod transforms;
 
@@ -652,6 +653,10 @@ pub fn fold_program(
   ensure_no_fatal_diagnostics(diagnostics)?;
 
   let mut passes = chain!(
+    Optional::new(
+      TransformVisitor,
+      true
+    ),
     Optional::new(transforms::StripExportsFolder, options.var_decl_imports),
     resolver(marks.unresolved, marks.top_level, true),
     Optional::new(
