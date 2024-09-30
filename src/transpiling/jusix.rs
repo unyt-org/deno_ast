@@ -2,7 +2,7 @@ use swc_ecma_ast::{
     ArrowExpr, BlockStmt, BlockStmtOrExpr, CallExpr, Callee, Expr, ExprOrSpread, ExprStmt,
     FnDecl, Ident, JSXEmptyExpr, JSXExpr, JSXExprContainer, Lit, Null, ReturnStmt, Stmt,
     Str, VarDecl,
-    IdentName, JSXAttr, JSXAttrName, JSXAttrValue, JSXElement, JSXElementChild, JSXSpreadChild, MemberExpr, MemberProp
+    IdentName, JSXAttr, JSXAttrName, JSXAttrValue, JSXElement, JSXElementName, JSXElementChild, JSXSpreadChild, MemberExpr, MemberProp
 };
 
 use swc_ecma_visit::{Fold, Visit, FoldWith, VisitWith};
@@ -11,28 +11,107 @@ use swc_common::{util::take::Take, SyntaxContext, DUMMY_SP};
 
 
 struct VariableCollector {
-    variables: Vec<String>,
+    used_variables: Vec<String>,
+    variable_declarations: Vec<String>,
 }
 
 impl VariableCollector {
     fn new() -> Self {
         VariableCollector {
-            variables: Vec::new(),
+            used_variables: Vec::new(),
+            variable_declarations: Vec::new(),
         }
     }
 }
 
 impl Visit for VariableCollector {
+
+    fn visit_jsx_element_name(&mut self, _name: &JSXElementName) {
+        // ignore jsx name as identifier
+    }
+
     fn visit_ident(&mut self, ident: &Ident) {
-        // add variable to list if not already present
-        if !self.variables.contains(&ident.sym.to_string()) {
-            self.variables.push(ident.sym.to_string());
+        // add variable to list if not already present and not
+        // in variable_declarations
+        let name = ident.sym.to_string();
+        if !self.used_variables.contains(&name) &&
+            !self.variable_declarations.contains(&name) &&
+            !GLOBAL_THIS_ALIASES.contains(&name.as_str()) {
+            self.used_variables.push(name);
         }
     }
 
     fn visit_var_decl(&mut self, var_decl: &VarDecl) {
         for decl in &var_decl.decls {
-            decl.name.visit_with(self);
+            // add variable to list if not already present
+            match &decl.name {
+                Pat::Ident(i) => {
+                    let name = i.sym.to_string();
+                    if !self.variable_declarations.contains(&name) {
+                        self.variable_declarations.push(name);
+                    }
+                }
+                Pat::Object(o) => {
+                    for prop in &o.props {
+                        match prop {
+                            ObjectPatProp::KeyValue(kv) => {
+                                match *kv.value.clone() {
+                                    Pat::Ident(i) => {
+                                        let name = i.sym.to_string();
+                                        if !self.variable_declarations.contains(&name) {
+                                            self.variable_declarations.push(name);
+                                        }
+                                    }
+                                    _ => {}
+                                    
+                                }
+                            }
+                            ObjectPatProp::Assign(a) => {
+                                let name = a.key.sym.to_string();
+                                if !self.variable_declarations.contains(&name) {
+                                    self.variable_declarations.push(name);
+                                }
+                            }
+                            ObjectPatProp::Rest(r) => {
+                                if let Pat::Ident(i) = &*r.arg {
+                                    let name = i.sym.to_string();
+                                    if !self.variable_declarations.contains(&name) {
+                                        self.variable_declarations.push(name);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Pat::Array(a) => {
+                    for elem in &a.elems {
+                        match elem {
+                            Some(Pat::Ident(i)) => {
+                                let name = i.sym.to_string();
+                                if !self.variable_declarations.contains(&name) {
+                                    self.variable_declarations.push(name);
+                                }
+                            }
+                            Some(Pat::Array(a)) => {
+                                for elem in &a.elems {
+                                    match elem {
+                                        Some(Pat::Ident(i)) => {
+                                            let name = i.sym.to_string();
+                                            if !self.variable_declarations.contains(&name) {
+                                                self.variable_declarations.push(name);
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+            decl.visit_with(self);
         }
     }
 
@@ -49,10 +128,26 @@ impl Visit for VariableCollector {
 }
 
 
+const GLOBAL_THIS_ALIASES: [&'static str; 3] = [
+    "globalThis",
+    "self",
+    "window",
+];
+
+
 const DOLLAR_METHODS: [&'static str; 3] = [
     "map",
     "filter",
     "reduce",
+];
+
+const RENDER_METHODS: [&'static str; 6] = [
+    "renderBackend",
+    "renderFrontend",
+    "renderStatic",
+    "renderDynamic",
+    "renderHybrid",
+    "renderPreview"
 ];
 
 
@@ -60,7 +155,7 @@ pub struct TransformVisitor;
 
 impl TransformVisitor {
     // wraps in expression in always() if needed
-    fn transform_expr_reactive(&mut self, e: Box<Expr>) -> Box<Expr> {
+    fn transform_expr_reactive(&mut self, e: Box<Expr>, always_fn_name: &str) -> Box<Expr> {
         match e.unwrap_parens() {
             // keep single literal values
             Expr::Lit(_) | Expr::JSXElement(_) | Expr::Ident(_) => e,
@@ -89,7 +184,7 @@ impl TransformVisitor {
                             )))),
                             args: vec![
                                 ExprOrSpread {
-                                    expr: self.transform_expr_reactive(m.obj.clone()),
+                                    expr: self.transform_expr_reactive(m.obj.clone(), "_$"),
                                     spread: None
                                 },
                                 // convert prop to string
@@ -198,6 +293,14 @@ impl TransformVisitor {
                 e
             }
 
+            // is a render method call, keep as is
+            Expr::Call(c)
+                if c.callee.is_expr()
+                    && RENDER_METHODS.iter().any(|m| c.callee.as_expr().unwrap().is_ident_ref_to(m)) =>
+            {
+                e.fold_children_with(self)
+            }
+
             // convert redundant $()
             Expr::Call(c)
                 if c.callee.is_expr() && (c.callee.as_expr().unwrap().is_ident_ref_to("always")) =>
@@ -209,7 +312,7 @@ impl TransformVisitor {
             _ => Box::new(Expr::Call(CallExpr {
                 span: DUMMY_SP,
                 callee: Callee::Expr(Box::new(Expr::Ident(Ident::new(
-                    "_$".into(),
+                    always_fn_name.into(),
                     DUMMY_SP,
                     Default::default(),
                 )))),
@@ -238,7 +341,7 @@ impl TransformVisitor {
         let mut body_vec = vec![];
 
         // add use();
-        if collector.variables.len() > 0 {
+        if collector.used_variables.len() > 0 {
             body_vec.push(Stmt::Expr(ExprStmt {
                 span: DUMMY_SP,
                 expr: Box::new(Expr::Call(CallExpr {
@@ -249,7 +352,7 @@ impl TransformVisitor {
                         ctxt,
                     )))),
                     args: collector
-                        .variables
+                        .used_variables
                         .iter()
                         // ignore "use" variable
                         .filter(|v| !(*v == "use"))
@@ -346,7 +449,7 @@ impl Fold for TransformVisitor {
                             Expr::Lit(_) | Expr::JSXElement(_) | Expr::Ident(_) => CallExpr {
                                 span: DUMMY_SP,
                                 callee: Callee::Expr(Box::new(Expr::Ident(Ident::new(
-                                    "$$".into(),
+                                    "$".into(),
                                     DUMMY_SP,
                                     call.ctxt,
                                 )))),
@@ -360,14 +463,14 @@ impl Fold for TransformVisitor {
 
                             // default: wrap in always
                             _ => {
-                                let reactive = self.transform_expr_reactive(arg.clone());
+                                let reactive = self.transform_expr_reactive(arg.clone(), "always");
                                 match reactive.unwrap_parens() {
                                     Expr::Call(c) => c.clone(),
                                     // transform_expr_reactive returns a CallExpr in all cases except for Expr::Arrow(_) | Expr::Fn
                                     _ => CallExpr {
                                         span: DUMMY_SP,
                                         callee: Callee::Expr(Box::new(Expr::Ident(Ident::new(
-                                            "_$".into(),
+                                            "always".into(),
                                             DUMMY_SP,
                                             call.ctxt,
                                         )))),
@@ -397,6 +500,11 @@ impl Fold for TransformVisitor {
 
                     Expr::Ident(i) if i.sym.eq_ignore_ascii_case("run") => {
                         // add "use()" to run (()=>{})
+                        return TransformVisitor::transform_transferable_call_expr(&call);
+                    }
+
+                    Expr::Ident(i) if i.sym.eq_ignore_ascii_case("renderFrontend") => {
+                        // add "use()" to renderFrontend (()=>{})
                         return TransformVisitor::transform_transferable_call_expr(&call);
                     }
 
@@ -493,7 +601,7 @@ impl Fold for TransformVisitor {
             JSXElementChild::JSXSpreadChild(c) => JSXElementChild::JSXSpreadChild(
                 JSXSpreadChild {
                     span: DUMMY_SP,
-                    expr: self.transform_expr_reactive(c.expr)
+                    expr: self.transform_expr_reactive(c.expr, "_$")
                 }
             ),
             JSXElementChild::JSXElement(e) => JSXElementChild::JSXElement(
@@ -518,7 +626,7 @@ impl Fold for TransformVisitor {
         JSXExprContainer {
             span: DUMMY_SP,
             expr: (match n.expr {
-                JSXExpr::Expr(e) => JSXExpr::Expr(self.transform_expr_reactive(e)),
+                JSXExpr::Expr(e) => JSXExpr::Expr(self.transform_expr_reactive(e, "_$")),
                 JSXExpr::JSXEmptyExpr(_) => JSXExpr::JSXEmptyExpr(JSXEmptyExpr { span: DUMMY_SP }),
             }),
         }
