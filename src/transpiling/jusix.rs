@@ -1,8 +1,7 @@
 use swc_ecma_ast::{
     ArrowExpr, BlockStmt, BlockStmtOrExpr, CallExpr, Callee, Expr, ExprOrSpread, ExprStmt,
-    FnDecl, Ident, JSXEmptyExpr, JSXExpr, JSXExprContainer, Lit, Null, ReturnStmt, Stmt,
-    Str, VarDecl,
-    IdentName, JSXAttr, JSXAttrName, JSXAttrValue, JSXElement, JSXElementName, JSXElementChild, JSXSpreadChild, MemberExpr, MemberProp
+    FnDecl, Ident, JSXAttr, JSXAttrName, JSXAttrValue, JSXElement, JSXElementChild, JSXElementName, JSXEmptyExpr, JSXExpr, JSXExprContainer, JSXSpreadChild, Lit, MemberProp, Null, ObjectPatProp, Pat, ReturnStmt, 
+    Stmt, Str, VarDecl
 };
 
 use swc_ecma_visit::{Fold, Visit, FoldWith, VisitWith};
