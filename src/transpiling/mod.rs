@@ -146,7 +146,7 @@ pub struct TranspileOptions {
   /// Should import declarations be transformed to variable declarations using
   /// a dynamic import. This is useful for import & export declaration support
   /// in script contexts such as the Deno REPL.  Defaults to `false`.
-  pub var_decl_imports: bool,
+  pub var_decl_imports: bool
 }
 
 impl Default for TranspileOptions {
@@ -663,7 +663,8 @@ pub fn fold_program<'a>(
   let mut passes = chain!(
     Optional::new(
       TransformVisitor,
-      true
+      // disable jusix via env var DISABLE_JUSIX
+      !std::env::var("DISABLE_JUSIX").is_ok()
     ),
     Optional::new(transforms::StripExportsFolder, options.var_decl_imports),
     resolver(marks.unresolved, marks.top_level, true),
