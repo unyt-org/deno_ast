@@ -5,7 +5,6 @@ use swc_ecma_ast::{
 use swc_ecma_visit::{Fold, Visit, FoldWith, VisitWith};
 use swc_atoms::Atom;
 use swc_common::{util::take::Take, SyntaxContext, DUMMY_SP};
-
 fn collect_params(params: &Vec<Pat>, add_this: bool) -> Vec<Id> {
     let mut result: Vec<Id> = vec![];
 
@@ -661,11 +660,17 @@ impl TransformVisitor {
                 .used_variables
                 .iter()
                 .map(|v| {
-                    Expr::Ident(Ident::new(
-                        v.0.clone(),
-                        DUMMY_SP,
-                        v.1,
-                    ))
+                    if v.0 == "this" {
+                        Expr::This(ThisExpr { span: DUMMY_SP })
+                    }
+                    else {
+                        Expr::Ident(Ident::new(
+                            v.0.clone(),
+                            DUMMY_SP,
+                            v.1,
+                        ))
+                    }
+                   
                 })
                 .map(|v| ExprOrSpread {
                     expr: Box::new(v),
