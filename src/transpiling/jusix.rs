@@ -1,5 +1,5 @@
 use swc_ecma_ast::{
-    ArrowExpr, AwaitExpr, BindingIdent, BlockStmt, BlockStmtOrExpr, CallExpr, Callee, CatchClause, ClassDecl, ClassMethod, Expr, ExprOrSpread, ExprStmt, FnDecl, FnExpr, Id, Ident, JSXAttr, JSXAttrName, JSXAttrValue, JSXElement, JSXElementChild, JSXElementName, JSXEmptyExpr, JSXExpr, JSXExprContainer, JSXSpreadChild, JSXText, Lit, MemberProp, Null, Number, ObjectPatProp, Param, ParamOrTsParamProp, Pat, PrivateMethod, ReturnStmt, Stmt, Str, ThisExpr, TsAsExpr, TsEnumDecl, TsInterfaceDecl, TsParamPropParam, TsType, TsTypeAliasDecl, VarDecl
+    ArrowExpr, AwaitExpr, BindingIdent, BlockStmt, BlockStmtOrExpr, CallExpr, Callee, CatchClause, ClassDecl, ClassMethod, Constructor, Expr, ExprOrSpread, ExprStmt, FnDecl, FnExpr, Id, Ident, JSXAttr, JSXAttrName, JSXAttrValue, JSXElement, JSXElementChild, JSXElementName, JSXEmptyExpr, JSXExpr, JSXExprContainer, JSXSpreadChild, JSXText, Lit, MemberProp, Null, Number, ObjectPatProp, Param, ParamOrTsParamProp, Pat, PrivateMethod, ReturnStmt, Stmt, Str, ThisExpr, TsAsExpr, TsEnumDecl, TsInterfaceDecl, TsParamPropParam, TsType, TsTypeAliasDecl, VarDecl
 };
 
 use swc_ecma_visit::{Fold, Visit, FoldWith, VisitWith};
@@ -7,7 +7,7 @@ use swc_atoms::Atom;
 use swc_common::{util::take::Take, SyntaxContext, DUMMY_SP};
 
 
-fn collect_params(params: &Vec<Pat>, add_this: bool) -> Vec<Id> {
+fn collect_pafn collect_params(params: &Vec<Pat>, add_this: bool) -> Vec<Id> {
     let mut result: Vec<Id> = vec![];
 
     if add_this {
@@ -307,7 +307,7 @@ impl Visit for VariableCollector {
         );
     }
 
-    fn visit_constructor(&mut self, node: &swc_core::ecma::ast::Constructor) {
+    fn visit_constructor(&mut self, node: &Constructor) {
         // Visit the constructor body
         self.visit_block_recursive(
             &node.params.iter().map(|p| match p {
