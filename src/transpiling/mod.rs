@@ -664,7 +664,7 @@ pub fn fold_program<'a>(
     Optional::new(
       TransformVisitor,
       // enable jusix if options.jsx_import_source is "jusix"
-      options.jsx_import_source == Some("jusix")
+      options.jsx_import_source == Some("jusix".to_string())
     ),
     Optional::new(transforms::StripExportsFolder, options.var_decl_imports),
     resolver(marks.unresolved, marks.top_level, true),
