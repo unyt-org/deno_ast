@@ -21,6 +21,20 @@ fn collect_pafn collect_params(params: &Vec<Pat>, add_this: bool) -> Vec<Id> {
                 let var = i.to_id();
                 if !result.contains(&var) {
                     result.push(var);
+             fn collect_params(params: &Vec<Pat>, add_this: bool) -> Vec<Id> {
+    let mut result: Vec<Id> = vec![];
+
+    if add_this {
+        let this = (Atom::from("this"), SyntaxContext::empty());
+        result.push(this);
+    }
+
+    for param in params {
+        match param {
+            Pat::Ident(i) => {
+                let var = i.to_id();
+                if !result.contains(&var) {
+                    result.push(var);
                 }
             }
             Pat::Array(a) => {
