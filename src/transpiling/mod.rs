@@ -655,8 +655,8 @@ pub fn fold_program(
   let mut passes = chain!(
     Optional::new(
       TransformVisitor,
-      // disable jusix via env var DISABLE_JUSIX
-      !std::env::var("DISABLE_JUSIX").is_ok()
+      // enable jusix if options.jsx_import_source is "jusix"
+      options.jsx_import_source == Some("jusix")
     ),
     Optional::new(transforms::StripExportsFolder, options.var_decl_imports),
     resolver(marks.unresolved, marks.top_level, true),
