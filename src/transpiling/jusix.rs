@@ -1,10 +1,13 @@
 use swc_ecma_ast::{
-    ArrowExpr, AwaitExpr, BindingIdent, BlockStmt, BlockStmtOrExpr, CallExpr, Callee, CatchClause, ClassDecl, ClassMethod, Constructor, Expr, ExprOrSpread, ExprStmt, FnDecl, FnExpr, Id, Ident, JSXAttr, JSXAttrName, JSXAttrValue, JSXElement, JSXElementChild, JSXElementName, JSXEmptyExpr, JSXExpr, JSXExprContainer, JSXSpreadChild, JSXText, Lit, MemberProp, Null, Number, ObjectPatProp, Param, ParamOrTsParamProp, Pat, PrivateMethod, ReturnStmt, Stmt, Str, ThisExpr, TsAsExpr, TsEnumDecl, TsInterfaceDecl, TsParamPropParam, TsType, TsTypeAliasDecl, VarDecl
+    ArrowExpr, AwaitExpr, BlockStmt, BlockStmtOrExpr, CallExpr, Callee, CatchClause, ClassDecl, ClassMethod, Constructor, Expr, ExprOrSpread, ExprStmt, FnDecl, FnExpr, Function, Id, Ident, JSXAttr, JSXAttrName, JSXAttrValue, JSXElement, JSXElementChild, JSXElementName, JSXEmptyExpr, JSXExpr, JSXExprContainer, JSXSpreadChild, JSXText, Lit, MemberProp, Null, Number, ObjectPatProp, ParamOrTsParamProp, Pat, PrivateMethod, ReturnStmt, Stmt, Str, ThisExpr, TsEnumDecl, TsInterfaceDecl, TsParamPropParam, TsType, TsTypeAliasDecl, VarDecl
 };
 
 use swc_ecma_visit::{Fold, Visit, FoldWith, VisitWith};
 use swc_atoms::Atom;
 use swc_common::{util::take::Take, SyntaxContext, DUMMY_SP};
+
+
+
 fn collect_params(params: &Vec<Pat>, add_this: bool) -> Vec<Id> {
     let mut result: Vec<Id> = vec![];
 
@@ -157,15 +160,15 @@ impl Visit for VariableCollector {
         call_expr.visit_children_with(self);
     }
 
-    fn visit_ts_type(&mut self, node: &TsType) {
+    fn visit_ts_type(&mut self, _node: &TsType) {
         // ignore type annotations
     }
 
-    fn visit_ts_type_alias_decl(&mut self, node: &TsTypeAliasDecl) {
+    fn visit_ts_type_alias_decl(&mut self, _node: &TsTypeAliasDecl) {
         // ignore type alias declarations
     }
 
-    fn visit_ts_interface_decl(&mut self, node: &TsInterfaceDecl) {
+    fn visit_ts_interface_decl(&mut self, _node: &TsInterfaceDecl) {
         // ignore interface declarations
     }
 
@@ -625,21 +628,7 @@ impl TransformVisitor {
         }
     }
 
-    fn transform_transferable_closure(arrow: &ArrowExpr, ctxt: SyntaxContext) -> ArrowExpr {
-        // find all variables used in the arrow function body
-        let mut collector = VariableCollector::new();
-
-        // add arrow function params to collector variable_declarations
-        for param in collect_params(&arrow.params, false) {
-            if !collector.variable_declarations.contains(&param) {
-                collector.variable_declarations.push(param);
-            }
-        }
-
-        arrow.body.visit_children_with(&mut collector);
-
-        let mut body_vec = vec![];
-
+    fn add_use_statement_to_body(collector: VariableCollector, body_vec: &mut Vec<Stmt>, ctxt: SyntaxContext) {
         // add use();
         if collector.used_variables.len() > 0 && !collector.has_custom_use {
 
@@ -694,6 +683,25 @@ impl TransformVisitor {
                 })),
             }))
         }
+    }
+
+    fn transform_transferable_arrow_fn(arrow: &ArrowExpr, ctxt: SyntaxContext) -> ArrowExpr {
+        // find all variables used in the arrow function body
+        let mut collector = VariableCollector::new();
+
+        // add arrow function params to collector variable_declarations
+        for param in collect_params(&arrow.params, false) {
+            if !collector.variable_declarations.contains(&param) {
+                collector.variable_declarations.push(param);
+            }
+        }
+
+        arrow.body.visit_children_with(&mut collector);
+
+        let mut body_vec = vec![];
+
+        // add use();
+        TransformVisitor::add_use_statement_to_body(collector, &mut body_vec, ctxt);
 
         // add original body
         match &*arrow.body {
@@ -728,6 +736,52 @@ impl TransformVisitor {
         }
     }
 
+    fn transform_transferable_fn(fn_expr: &FnExpr) -> FnExpr {
+        let mut collector = VariableCollector::new();
+        let ctxt = fn_expr.function.ctxt;
+
+        // add function params to collector variable_declarations
+        for param in collect_params(&fn_expr.function.params.iter().map(|p| p.pat.clone()).collect(), false) {
+            if !collector.variable_declarations.contains(&param) {
+                collector.variable_declarations.push(param);
+            }
+        }
+
+        fn_expr.function.body.visit_children_with(&mut collector);
+
+        let mut body_vec = vec![];
+
+        // add use();
+        TransformVisitor::add_use_statement_to_body(collector, &mut body_vec, ctxt);
+
+        // add original body
+        if let Some(body) = &fn_expr.function.body {
+            for stmt in body.stmts.iter() {
+                body_vec.push(stmt.clone());
+            }
+        }
+
+        FnExpr {
+            ident: fn_expr.ident.clone(),
+            function: Box::new(Function {
+                params: fn_expr.function.params.clone(),
+                decorators: fn_expr.function.decorators.clone(),
+                span: fn_expr.function.span,
+                // add use(); followed by original body
+                body: Some(BlockStmt {
+                    span: DUMMY_SP,
+                    ctxt: fn_expr.function.ctxt,
+                    stmts: body_vec,
+                }),
+                is_async: fn_expr.function.is_async,
+                is_generator: fn_expr.function.is_generator,
+                type_params: fn_expr.function.type_params.clone(),
+                return_type: fn_expr.function.return_type.clone(),
+                ctxt: fn_expr.function.ctxt,
+            })
+        }
+    }
+
     fn transform_transferable_call_expr(call: &CallExpr) -> CallExpr {
         let arg = TransformVisitor::get_first_arg(call);
 
@@ -737,13 +791,23 @@ impl TransformVisitor {
                 span: call.span,
                 callee: call.callee.clone(),
                 args: vec![Box::new(Expr::Arrow(
-                    TransformVisitor::transform_transferable_closure(a, call.ctxt),
+                    TransformVisitor::transform_transferable_arrow_fn(a, call.ctxt),
                 ))
                 .into()],
                 type_args: call.type_args.clone(),
                 ctxt: call.ctxt,
             },
             // TODO: other functions
+            Expr::Fn(f) => CallExpr {
+                span: call.span,
+                callee: call.callee.clone(),
+                args: vec![Box::new(Expr::Fn(
+                    TransformVisitor::transform_transferable_fn(f),
+                ))
+                .into()],
+                type_args: call.type_args.clone(),
+                ctxt: call.ctxt,
+            },
             _ => call.clone(),
         }
     }
@@ -875,19 +939,19 @@ impl Fold for TransformVisitor {
                                     value: Some(JSXAttrValue::JSXExprContainer(JSXExprContainer {
                                         span: DUMMY_SP,
                                         expr: JSXExpr::Expr(Box::new(Expr::Arrow(
-                                            TransformVisitor::transform_transferable_closure(
+                                            TransformVisitor::transform_transferable_arrow_fn(
                                                 &a, a.ctxt,
                                             ),
                                         ))),
                                     })),
                                 },
-                                Expr::Call(c) => return JSXAttr {
+                                Expr::Fn(f) => return JSXAttr {
                                     span: node.span,
                                     name: node.name.clone(),
                                     value: Some(JSXAttrValue::JSXExprContainer(JSXExprContainer {
                                         span: DUMMY_SP,
-                                        expr: JSXExpr::Expr(Box::new(Expr::Call(
-                                            TransformVisitor::transform_transferable_call_expr(&c),
+                                        expr: JSXExpr::Expr(Box::new(Expr::Fn(
+                                            TransformVisitor::transform_transferable_fn(&f),
                                         ))),
                                     })),
                                 },
