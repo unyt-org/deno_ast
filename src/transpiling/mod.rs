@@ -5,9 +5,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use deno_media_type::MediaType;
-use jusix::TransformVisitor;
-use swc_ecma_visit::as_folder;
+use dprint_swc_ext::common::SourceRangedForSpanned;
+use dprint_swc_ext::common::SourceTextInfo;
 use thiserror::Error;
+use jusix::TransformVisitor;
 
 use crate::emit;
 use crate::swc::ast::Program;
@@ -40,9 +41,9 @@ use crate::SourceMap;
 use deno_error::JsError;
 use std::cell::RefCell;
 
-mod jusix;
 mod jsx_precompile;
 mod transforms;
+mod jusix;
 
 /// Holds whether the `ParsedSource` was cloned or consumed (owned) during
 /// transpilation. This is useful for logging in the CLI when transpilation
@@ -146,7 +147,7 @@ pub struct TranspileOptions {
   /// Should import declarations be transformed to variable declarations using
   /// a dynamic import. This is useful for import & export declaration support
   /// in script contexts such as the Deno REPL.  Defaults to `false`.
-  pub var_decl_imports: bool
+  pub var_decl_imports: bool,
 }
 
 impl Default for TranspileOptions {
