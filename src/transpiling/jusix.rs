@@ -496,7 +496,7 @@ impl TransformVisitor {
 
                 let mut args: Vec::<ExprOrSpread> = vec![
                     ExprOrSpread {
-                        expr: obj,
+                        expr: self.transform_expr_reactive(obj, "_$"),
                         spread: None
                     },
                     ExprOrSpread {
