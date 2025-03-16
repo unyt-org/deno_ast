@@ -7,8 +7,9 @@ use std::sync::Arc;
 use deno_media_type::MediaType;
 use dprint_swc_ext::common::SourceRangedForSpanned;
 use dprint_swc_ext::common::SourceTextInfo;
+use sha256;
+use swc_ecma_visit::fold_pass;
 use thiserror::Error;
-use jusix::TransformVisitor;
 
 use crate::emit;
 use crate::swc::ast::Program;
@@ -258,6 +259,7 @@ impl ParsedSource {
     emit_options: &EmitOptions,
   ) -> Result<EmittedSourceText, TranspileError> {
     let program = (*self.program()).clone();
+
     transpile(
       self.specifier().clone(),
       self.media_type(),
@@ -359,6 +361,50 @@ fn transpile(
     return Err(TranspileError::DecoratorOptionsConflict);
   }
 
+  let mut reactive_positions = None;
+
+  let value = std::env::var("UIX_METADATA_DIR");
+  // TODO: remove specifier_is_file check
+  let specifier_is_file = specifier.scheme() == "file";
+  if specifier_is_file {
+    if let Ok(uix_metadata_dir) = value {
+      println!("\n-> SPECIFIER={}", specifier);
+      // println!("-> UIX_METADATA_DIR={}", uix_metadata_dir);
+
+      let specifier_hash = sha256::digest(specifier.to_string().as_bytes());
+      let file_path = format!("{}/{}", uix_metadata_dir, specifier_hash);
+      println!("-> FILE_PATH={}\n", file_path);
+
+      // if file exists in file system, read it and parse it
+      if std::path::Path::new(&file_path).exists() {
+        // read file contents (e.g. 0,1,3), split by comma, and convert to u32 vec
+        let file = std::fs::read_to_string(file_path);
+        
+        if let Ok(file) = file {
+          let positions = file
+            .split(",")
+            .map(|s| s.parse::<u32>());
+          // if any of the positions fail to parse, return an error
+          if positions.clone().any(|p| p.is_err()) {
+            println!("-> failed to parse file contents");
+          }
+          // otherwise, collect the positions into a vec
+          else {
+            let positions = positions
+              .map(|p| p.unwrap())
+              .collect::<Vec<u32>>();
+
+              println!("-> REACTIVE_POSITIONS={:?}", positions);
+              reactive_positions = Some(positions);
+          }     
+        }
+        else {
+          println!("-> file exists, but failed to read file");
+        }
+      }
+    }
+  }
+
   let module_kind = transpile_module_options.module_kind.unwrap_or({
     if matches!(media_type, MediaType::Cjs | MediaType::Cts) {
       ModuleKind::Cjs
@@ -397,14 +443,16 @@ fn transpile(
 
   let source_map = SourceMap::single(specifier, source);
   let diagnostics = diagnostics.for_module_kind(module_kind);
+
   let program = globals.with(|marks| {
-    fold_program(
+    fold_program_with_reactive_positions(
       program,
       transpile_options,
       &source_map,
       &comments,
       marks,
       diagnostics,
+      reactive_positions,
     )
   })?;
 
@@ -650,7 +698,6 @@ pub enum FoldProgramError {
   Swc(#[from] SwcFoldDiagnosticsError),
 }
 
-/// Low level function for transpiling a program.
 pub fn fold_program<'a>(
   program: Program,
   options: &TranspileOptions,
@@ -659,15 +706,38 @@ pub fn fold_program<'a>(
   marks: &Marks,
   diagnostics: Box<dyn Iterator<Item = &'a ParseDiagnostic> + 'a>,
 ) -> Result<Program, FoldProgramError> {
-  ensure_no_fatal_diagnostics(diagnostics)?;
+  fold_program_with_reactive_positions(
+    program,
+    options,
+    source_map,
+    comments,
+    marks,
+    diagnostics,
+    None,
+  )
+}
 
-  let mut passes = chain!(
+/// Low level function for transpiling a program.
+fn fold_program_with_reactive_positions<'a>(
+  program: Program,
+  options: &TranspileOptions,
+  source_map: &SourceMap,
+  comments: &SingleThreadedComments,
+  marks: &Marks,
+  diagnostics: Box<dyn Iterator<Item = &'a ParseDiagnostic> + 'a>,
+  reactive_positions: Option<Vec<u32>>
+) -> Result<Program, FoldProgramError> {
+  ensure_no_fatal_diagnostics(diagnostics)?;
+  let passes = (
     Optional::new(
-      TransformVisitor,
+      fold_pass(jusix::TransformVisitor::with_reactive_positions(reactive_positions)),
       // enable jusix if options.jsx_import_source is "jusix"
       options.jsx_import_source == Some("jusix".to_string())
     ),
-    Optional::new(transforms::StripExportsFolder, options.var_decl_imports),
+    Optional::new(
+      fold_pass(transforms::StripExportsFolder),
+      options.var_decl_imports,
+    ),
     resolver(marks.unresolved, marks.top_level, true),
     Optional::new(
       proposal::decorators::decorators(proposal::decorators::Config {
@@ -747,15 +817,18 @@ pub fn fold_program<'a>(
         marks.unresolved,
       ),
       options.transform_jsx,
-    ),
-    // if using var decl imports, do another pass in order to transform the
-    // automatically inserted jsx runtime import to a var decl
-    Optional::new(
-      fold_pass(transforms::ImportDeclsToVarDeclsFolder),
-      options.var_decl_imports && options.transform_jsx,
-    ),
+    ),    
     // nested tuple because swc only supports up to 13 items
-    (fixer(Some(comments)), hygiene()),
+    (
+      // if using var decl imports, do another pass in order to transform the
+      // automatically inserted jsx runtime import to a var decl
+      Optional::new(
+        fold_pass(transforms::ImportDeclsToVarDeclsFolder),
+        options.var_decl_imports && options.transform_jsx,
+      ),
+      fixer(Some(comments)), 
+      hygiene()
+    ),
   );
 
   let emitter = DiagnosticCollector::default();
