@@ -361,49 +361,54 @@ fn transpile(
     return Err(TranspileError::DecoratorOptionsConflict);
   }
 
-  let mut reactive_positions = None;
-
   let value = std::env::var("UIX_METADATA_DIR");
-  // TODO: remove specifier_is_file check
-  let specifier_is_file = specifier.scheme() == "file";
-  if specifier_is_file {
-    if let Ok(uix_metadata_dir) = value {
-      println!("\n-> SPECIFIER={}", specifier);
-      // println!("-> UIX_METADATA_DIR={}", uix_metadata_dir);
+  let is_tsx = media_type == MediaType::Tsx;
 
-      let specifier_hash = sha256::digest(specifier.to_string().as_bytes());
-      let file_path = format!("{}/{}", uix_metadata_dir, specifier_hash);
-      println!("-> FILE_PATH={}\n", file_path);
-
-      // if file exists in file system, read it and parse it
-      if std::path::Path::new(&file_path).exists() {
-        // read file contents (e.g. 0,1,3), split by comma, and convert to u32 vec
-        let file = std::fs::read_to_string(file_path);
-        
-        if let Ok(file) = file {
-          let positions = file
-            .split(",")
-            .map(|s| s.parse::<u32>());
-          // if any of the positions fail to parse, return an error
-          if positions.clone().any(|p| p.is_err()) {
-            println!("-> failed to parse file contents");
+  let reactive_positions = {
+    if is_tsx {
+      if let Ok(uix_metadata_dir) = value {
+        println!("\n-> SPECIFIER={}", specifier);
+        // println!("-> UIX_METADATA_DIR={}", uix_metadata_dir);
+  
+        let specifier_hash = sha256::digest(specifier.to_string().as_bytes());
+        let file_path = format!("{}/{}", uix_metadata_dir, specifier_hash);
+        println!("-> FILE_PATH={}\n", file_path);
+  
+        // if file exists in file system, read it and parse it
+        if std::path::Path::new(&file_path).exists() {
+          // read file contents (e.g. 0,1,2) by comma, and convert to u32 vec
+          let file = std::fs::read_to_string(file_path);
+          
+          if let Ok(file) = file {
+            let positions = file
+              .split(",")
+              .map(|s| s.parse::<u32>());
+            // if any of the positions fail to parse, return an error
+            if positions.clone().any(|p| p.is_err()) {
+              println!("-> failed to parse file contents");
+              Some(vec![])
+            }
+            // otherwise, collect the positions into a vec
+            else {
+              let positions = positions
+                .map(|p| p.unwrap())
+                .collect::<Vec<u32>>();
+  
+                println!("-> REACTIVE_POSITIONS={:?}", positions);
+                Some(positions)
+            }     
           }
-          // otherwise, collect the positions into a vec
           else {
-            let positions = positions
-              .map(|p| p.unwrap())
-              .collect::<Vec<u32>>();
-
-              println!("-> REACTIVE_POSITIONS={:?}", positions);
-              reactive_positions = Some(positions);
-          }     
+            println!("-> file exists, but failed to read file");
+            Some(vec![])
+          }
         }
-        else {
-          println!("-> file exists, but failed to read file");
-        }
+        else {Some(vec![])}
       }
+      else {None}
     }
-  }
+    else {None}
+  };  
 
   let module_kind = transpile_module_options.module_kind.unwrap_or({
     if matches!(media_type, MediaType::Cjs | MediaType::Cts) {
