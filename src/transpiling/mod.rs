@@ -367,12 +367,12 @@ fn transpile(
     if let Ok(uix_metadata_dir) = value {
       let is_tsx = media_type == MediaType::Tsx;
       if is_tsx {
-        println!("\n-> SPECIFIER={}", specifier);
+        //println!("\n-> SPECIFIER={}", specifier);
         // println!("-> UIX_METADATA_DIR={}", uix_metadata_dir);
   
         let specifier_hash = sha256::digest(specifier.to_string().as_bytes());
         let file_path = format!("{}/{}", uix_metadata_dir, specifier_hash);
-        println!("-> FILE_PATH={}\n", file_path);
+        //println!("-> FILE_PATH={}\n", file_path);
   
         // if file exists in file system, read it and parse it
         if std::path::Path::new(&file_path).exists() {
@@ -385,7 +385,7 @@ fn transpile(
               .map(|s| s.parse::<u32>());
             // if any of the positions fail to parse, return an error
             if positions.clone().any(|p| p.is_err()) {
-              println!("-> failed to parse file contents");
+              println!("[!] failed to parse file contents of {}", specifier);
               Some(vec![])
             }
             // otherwise, collect the positions into a vec
@@ -394,12 +394,12 @@ fn transpile(
                 .map(|p| p.unwrap())
                 .collect::<Vec<u32>>();
   
-                println!("-> REACTIVE_POSITIONS={:?}", positions);
+                //println!("-> REACTIVE_POSITIONS={:?}", positions);
                 Some(positions)
             }     
           }
           else {
-            println!("-> file exists, but failed to read file");
+            println!("[!] file {} exists, but failed to read file", specifier);
             Some(vec![])
           }
         }
