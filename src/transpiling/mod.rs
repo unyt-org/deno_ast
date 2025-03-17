@@ -362,11 +362,11 @@ fn transpile(
   }
 
   let value = std::env::var("UIX_METADATA_DIR");
-  let is_tsx = media_type == MediaType::Tsx;
 
   let reactive_positions = {
-    if is_tsx {
-      if let Ok(uix_metadata_dir) = value {
+    if let Ok(uix_metadata_dir) = value {
+      let is_tsx = media_type == MediaType::Tsx;
+      if is_tsx {
         println!("\n-> SPECIFIER={}", specifier);
         // println!("-> UIX_METADATA_DIR={}", uix_metadata_dir);
   
