@@ -467,7 +467,6 @@ impl TransformVisitor {
 
     // wraps in expression in always() if needed
     fn transform_expr_reactive(&mut self, e: Box<Expr>, always_fn_name: &str, is_jsx_attr: bool) -> Box<Expr> {
-        // println!("transform_expr_reactive: {:?} {} {}", e, self.jsx_attr_index - 1, is_direct_jsx_child);
 
         if is_jsx_attr {
 
@@ -936,16 +935,6 @@ impl TransformVisitor {
             .collect()
     }
 
-    fn fold_jsx_expr_container_non_recursive(&mut self, n: JSXExprContainer, is_direct_jsx_child: bool) -> JSXExprContainer {
-        JSXExprContainer {
-            span: DUMMY_SP,
-            expr: (match n.expr {
-                JSXExpr::Expr(e) => JSXExpr::Expr(self.transform_expr_reactive(e, "_$", is_direct_jsx_child)),
-                JSXExpr::JSXEmptyExpr(_) => JSXExpr::JSXEmptyExpr(JSXEmptyExpr { span: DUMMY_SP }),
-            }),
-        }
-    }
-
     fn fold_jsx_expr_container(&mut self, n: JSXExprContainer, is_jsx_attr: bool) -> JSXExprContainer {
         JSXExprContainer {
             span: DUMMY_SP,
@@ -1069,8 +1058,6 @@ impl Fold for TransformVisitor {
 
     fn fold_jsx_attr(&mut self, node: JSXAttr) -> JSXAttr {
 
-        println!("\n>> INDEX = {} {:?}", self.jsx_attr_index, node);
-
         self.jsx_attr_index += 1;
 
         // if attribute ends with :frontend, transform_transferable_call_expr
@@ -1106,7 +1093,6 @@ impl Fold for TransformVisitor {
                                 },
 
                                 Expr::Lit(c) => {
-                                    println!("JSXAttrValue2: {:?}", c);
                                     JSXAttr {
                                         span: node.span,
                                         name: node.name.clone(),
