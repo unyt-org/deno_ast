@@ -622,7 +622,7 @@ impl TransformVisitor {
                                 expr: {
                                     let mut a2 = a1.clone();
                                     a2.body = Box::new(
-                                       *a2.body.fold_with(self)
+                                       *a2.body,
                                     );
                                     Box::new(Expr::Arrow(a2))
                                 },
@@ -1217,3 +1217,4 @@ impl Fold for TransformVisitor {
 
 
 }
+
